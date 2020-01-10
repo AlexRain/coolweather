@@ -4,6 +4,11 @@
     android:background="@color/colorPrimary"
     android:layout_height="match_parent">
 
+    <ImageView
+        android:id="@+id/bing_pic_big"
+        android:layout_width="match_parent"
+        android:scaleType="centerCrop"
+        android:layout_height="match_parent"/>
 
     <ScrollView
         android:id="@+id/weather_layout"
@@ -15,6 +20,7 @@
         <LinearLayout
             android:orientation="vertical"
             android:layout_width="match_parent"
+            android:fitsSystemWindows="true"
             android:layout_height="wrap_content">
 
             <include layout="@layout/title"/>
