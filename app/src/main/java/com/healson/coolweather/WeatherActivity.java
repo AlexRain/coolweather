@@ -1,5 +1,9 @@
 package com.healson.coolweather;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Build;
@@ -15,10 +19,14 @@ import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.bumptech.glide.Glide;
 import com.healson.coolweather.gson.Forecast;
 import com.healson.coolweather.gson.Weather;
+import com.healson.coolweather.service.AutoUpdateService;
 import com.healson.coolweather.util.HttpUtil;
 import com.healson.coolweather.util.Utility;
 
@@ -55,12 +63,22 @@ public class WeatherActivity extends AppCompatActivity {
 
     private ImageView bingPicImage;
 
+    public SwipeRefreshLayout swipeRefresh;
 
+    public DrawerLayout drawerLayout;
+
+    private String currentWeatherId;
+
+    private LocalReceiver localReceiver;
+
+    private LocalBroadcastManager manager;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_weather);
+
+        manager = LocalBroadcastManager.getInstance(this);
 
         if (Build.VERSION.SDK_INT >= 21){
             View decorView = getWindow().getDecorView();
@@ -84,33 +102,53 @@ public class WeatherActivity extends AppCompatActivity {
         forecastLayout = findViewById(R.id.forecast_layout);
         bingPicImage = findViewById(R.id.bing_pic_big);
 
-        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
-        String weatherString = preferences.getString("weather",null);
-        if (null != weatherString){
-            // 有缓存数据时直接解析天气数据
-            Weather weather = Utility.handleWeatherResponse(weatherString);
-            if (null != weather){
-                showWeatherInfo(weather);
-            }
-        }else{
-            // 无缓存时通过服务器获取天气数据
-            String weatherId = getIntent().getStringExtra("weather_id");
-            weatherLayout.setVisibility(View.INVISIBLE);
-            requestWeather(weatherId);
-        }
+        swipeRefresh = findViewById(R.id.swipe_refresh);
+        drawerLayout = findViewById(R.id.drawer_layout);
 
-        String bingPic = preferences.getString("bing_pic",null);
-        if (bingPic != null){
-            Glide.with(this).load(bingPic).into(bingPicImage);
-        }else{
-            loadBingPic();
+        // 优先从缓存中加载数据
+        updateWeatherInfoFromCache();
+
+        // 开启自动更新
+        Intent intent = new Intent(WeatherActivity.this, AutoUpdateService.class);
+        startService(intent);
+
+        // 下拉刷新
+        swipeRefresh.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
+            @Override
+            public void onRefresh() {
+                if (null != currentWeatherId){
+                    requestWeather(currentWeatherId);
+                }
+            }
+        });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (null == localReceiver){
+            localReceiver = new LocalReceiver();
         }
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction("com.example.broadcasttest.LOCAL_BROADCAST");
+        manager.registerReceiver(localReceiver, intentFilter);
+    }
+
+    @Override
+    protected void onPause() {
+        manager.unregisterReceiver(localReceiver);
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
     }
 
     /**
      * 根据ID请求天气数据
      */
-    private void requestWeather(final String weatherId){
+    public void requestWeather(final String weatherId){
         String address = "http://guolin.tech/api/weather?cityid="
                 + weatherId + "&key=22b706503d044c99b9c558e36f99c445";
         HttpUtil.sendOkHttpRequest(address, new Callback() {
@@ -122,6 +160,7 @@ public class WeatherActivity extends AppCompatActivity {
                     public void run() {
                         Toast.makeText(WeatherActivity.this, "获取天气信息失败",
                                 Toast.LENGTH_SHORT).show();
+                        swipeRefresh.setRefreshing(false);
                     }
                 });
             }
@@ -138,11 +177,16 @@ public class WeatherActivity extends AppCompatActivity {
                                     getDefaultSharedPreferences(WeatherActivity.this).
                                     edit();
                             editor.putString("weather",responseText).apply();
+                            currentWeatherId = weatherId;
                             showWeatherInfo(weather);
+
+                            Intent intent = new Intent(WeatherActivity.this, AutoUpdateService.class);
+                            startService(intent);
                         }else {
                             Toast.makeText(WeatherActivity.this, "获取天气信息失败",
                                     Toast.LENGTH_SHORT).show();
                         }
+                        swipeRefresh.setRefreshing(false);
                     }
                 });
             }
@@ -212,5 +256,54 @@ public class WeatherActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+    /**
+     * 从缓存中更新天气信息
+     */
+    private void updateWeatherInfoFromCache(){
+        String intentWeatherId = getIntent().getStringExtra("weather_id");
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        String weatherString = preferences.getString("weather",null);
+        final String weatherId;
+        if (null != weatherString){
+            // 有缓存数据时直接解析天气数据
+            Weather weather = Utility.handleWeatherResponse(weatherString);
+            if (null != weather){
+                weatherId = intentWeatherId;
+                if (intentWeatherId.equals(weather.basic.weatherId)){
+                    showWeatherInfo(weather);
+                }else{
+                    weatherLayout.setVisibility(View.INVISIBLE);
+                    requestWeather(weatherId);
+                }
+            }else{
+                weatherId = null;
+            }
+        }else{
+            // 无缓存时通过服务器获取天气数据
+            weatherId = getIntent().getStringExtra("weather_id");
+            weatherLayout.setVisibility(View.INVISIBLE);
+            requestWeather(weatherId);
+        }
+
+        currentWeatherId = weatherId;
+
+        String bingPic = preferences.getString("bing_pic",null);
+        if (bingPic != null){
+            Glide.with(this).load(bingPic).into(bingPicImage);
+        }else{
+            loadBingPic();
+        }
+    }
+    /**
+     *  本地接收本地广播，用于更新天气信息
+     */
+    class LocalReceiver extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            updateWeatherInfoFromCache();
+        }
     }
 }

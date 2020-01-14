@@ -2,6 +2,7 @@ package com.healson.coolweather;
 
 import android.app.ProgressDialog;
 import android.content.Intent;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -9,8 +10,10 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
+import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -42,10 +45,17 @@ public class ChooseAreaFragment extends Fragment {
     public static final int LEVEL_COUNTY = 2;
 
     private ProgressBar progressBar;
+
     private TextView titleView;
+
     private Button backButton;
+
+    private Button cancelButton;
+
     private ListView listView;
+
     private ArrayAdapter<String> adapter;
+
     private List<String> dataList = new ArrayList<>();
 
     /**
@@ -83,6 +93,8 @@ public class ChooseAreaFragment extends Fragment {
      */
     private int currentLevel;
 
+    private FrameLayout titleLayout;
+
     /**
      *  view创建回调
      * @param inflater
@@ -96,16 +108,21 @@ public class ChooseAreaFragment extends Fragment {
         View view = inflater.inflate(R.layout.choose_area,container,false);
         titleView = view.findViewById(R.id.title_view);
         backButton = view.findViewById(R.id.back_button);
+        cancelButton = view.findViewById(R.id.button_cancel);
         listView = view.findViewById(R.id.list_view);
         progressBar = view.findViewById(R.id.progress_bar);
         adapter = new ArrayAdapter<>(getContext(),android.R.layout.simple_list_item_1,dataList);
         listView.setAdapter(adapter);
+        titleLayout = view.findViewById(R.id.title_layout);
         return view;
     }
 
     @Override
     public void onActivityCreated(@Nullable Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
+        int statusBarHeight = getStatusBarHeight();
+        titleLayout.setPadding(0,statusBarHeight,0,0);
+
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
@@ -117,10 +134,21 @@ public class ChooseAreaFragment extends Fragment {
                     queryCounties();
                 }else if (currentLevel == LEVEL_COUNTY){
                     String weatherId = listCounty.get(position).getWeatherId();
-                    Intent intent = new Intent(getActivity(),WeatherActivity.class);
-                    intent.putExtra("weather_id",weatherId);
-                    startActivity(intent);
-                    getActivity().finish();
+                    if (getActivity() instanceof MainActivity){
+                        Intent intent = new Intent(getActivity(),WeatherActivity.class);
+                        intent.putExtra("weather_id",weatherId);
+                        startActivity(intent);
+                        getActivity().finish();
+                    }else if (getActivity() instanceof WeatherActivity){
+                        WeatherActivity activity = (WeatherActivity) getActivity();
+                        activity.drawerLayout.closeDrawers();
+                        activity.swipeRefresh.setRefreshing(true);
+                        activity.requestWeather(weatherId);
+                    }else if (getActivity() instanceof CityListActivity){
+                        CityListActivity activity = (CityListActivity) getActivity();
+                        activity.hideChooseArea();
+                        activity.addCity(weatherId);
+                    }
                 }
             }
         });
@@ -134,7 +162,32 @@ public class ChooseAreaFragment extends Fragment {
                 }
             }
         });
+
+        cancelButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (getActivity() instanceof MainActivity){
+                    getActivity().finish();
+                }else if (getActivity() instanceof WeatherActivity){
+                    WeatherActivity activity = (WeatherActivity) getActivity();
+                    activity.drawerLayout.closeDrawers();
+                }else if (getActivity() instanceof CityListActivity){
+                    CityListActivity activity = (CityListActivity) getActivity();
+                    activity.hideChooseArea();
+                }
+            }
+        });
         queryProvinces();
+    }
+
+
+    private int getStatusBarHeight() {
+        int result = 0;
+        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            result = getResources().getDimensionPixelSize(resourceId);
+        }
+        return result;
     }
 
     /**

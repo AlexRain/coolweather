@@ -5,5 +5,6 @@
         <mapping class = "com.healson.coolweather.db.Province"/>
         <mapping class = "com.healson.coolweather.db.City"/>
         <mapping class = "com.healson.coolweather.db.County"/>
+        <mapping class = "com.healson.coolweather.db.WeatherItem"/>
     </list>
 </litepal>
